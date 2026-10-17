@@ -8,8 +8,10 @@ News is scattered across dozens of sites and apps. People jump from link to link
 ## Features
 - **Onboarding:** name, at least 3 topics and free-text interests.
 - **Personal web paper:** masthead, lead story, top stories, topic sections, wildcards.
+- **Sections ordered by interest:** the topics a reader cares about most appear first, on the web page and in the PDF.
 - **"Shown because..." reasons** under every story, so ranking is transparent.
 - **Learning:** every Like and Skip updates the reader profile; rebuilding the paper reflects it.
+- **Duplicate-story filter:** stories that cover the same event from different sources are detected by headline overlap, so the paper does not repeat itself.
 - **Previous papers:** every daily edition is stored and can be reopened.
 - **Newspaper PDF:** multi-column layout, images, clickable links, takeaways box.
 - **AI takeaways:** Gemini writes "Today's 3 takeaways" and an editor's note, with a safe fallback if the API is unavailable.
@@ -21,7 +23,7 @@ News is scattered across dozens of sites and apps. People jump from link to link
 flowchart LR
     A[Onboarding] --> P[(Interest profile<br/>topic and keyword weights)]
     F[RSS fetcher<br/>multiple feeds] --> D[(Articles DB<br/>SQLite)]
-    D --> R[Ranker<br/>score + diversity + wildcards]
+    D --> R[Ranker<br/>score + diversity + duplicate filter + wildcards]
     P --> R
     R --> E[Edition builder]
     E --> H[(Edition archive)]
@@ -33,6 +35,8 @@ flowchart LR
     CI[GitHub Actions CI] -.-> E
 ```
 
+The same edition feeds both the web page and the PDF, so the reader always sees one consistent paper.
+
 ## How personalisation works
 Each story gets a score:
 
@@ -42,6 +46,9 @@ Each story gets a score:
 - `keyword_score` comes from typed interests and words in liked or skipped titles (clamped to -1.5 to 3.0).
 - `recency` decays linearly over 72 hours.
 - Diversity caps limit stories per source and per topic.
+- Stories the reader skipped, or has already seen in an earlier edition, are excluded.
+- Near-duplicate stories (high headline word overlap) are removed.
+- A few wildcards are added from topics the reader scores low on.
 
 ## How learning works
 - Like: topic +0.3, up to 8 title keywords +0.15.
@@ -60,12 +67,14 @@ GEMINI_API_KEY=your_key
 GEMINI_MODEL=gemini-3.8-flash
 ```
 
-## Tests
+## Tests and CI
 ```
 python -m pytest -q
 ```
+Seven tests cover tokenizing, duplicate detection, topic and keyword scoring, and PDF generation. GitHub Actions runs a syntax check and the tests on every push.
 
 ## Limitations and future work
 - RSS summaries are short; full article text is not fetched.
+- Duplicate detection uses headline word overlap, so paraphrased headlines about the same event can still both appear. Embeddings would fix this.
+- Learning is rule-based; embeddings could also improve keyword matching.
 - Scheduled daily fetch and email delivery are future work.
-- Learning is rule-based; embeddings could improve keyword matching.
