@@ -173,6 +173,7 @@ if st.sidebar.button("Prepare PDF"):
         st.session_state["pdf"] = (choice, build_pdf(
             user_name, label, articles,
             takeaways=insights["takeaways"] if insights else None,
+            editor_note=insights.get("note") if insights else None,
         ))
 ready = st.session_state.get("pdf")
 if ready and ready[0] == choice:
