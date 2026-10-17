@@ -20,7 +20,7 @@ News is scattered across dozens of sites and apps. People jump from link to link
 ```mermaid
 flowchart LR
     A[Onboarding] --> P[(Interest profile<br/>topic and keyword weights)]
-    F[RSS fetcher<br/>12 feeds] --> D[(Articles DB<br/>SQLite)]
+    F[RSS fetcher<br/>multiple feeds] --> D[(Articles DB<br/>SQLite)]
     D --> R[Ranker<br/>score + diversity + wildcards]
     P --> R
     R --> E[Edition builder]
@@ -68,4 +68,4 @@ python -m pytest -q
 ## Limitations and future work
 - RSS summaries are short; full article text is not fetched.
 - Scheduled daily fetch and email delivery are future work.
-- Learning is rule-based; embeddings could improve keyword matching.# personal-morning-paper
+- Learning is rule-based; embeddings could improve keyword matching.
