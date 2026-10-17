@@ -1,0 +1,7 @@
+streamlit
+pandas
+feedparser
+requests
+python-dotenv
+reportlab
+pytest
