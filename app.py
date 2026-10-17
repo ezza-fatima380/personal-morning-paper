@@ -4,6 +4,7 @@ from datetime import date, datetime
 import pandas as pd
 import streamlit as st
 
+from ai_features import make_insights
 from config import TOPICS
 from database import init_db
 from fetcher import fetch_all
@@ -158,17 +159,36 @@ if not articles:
     st.info("No stories yet. Click 'Fetch latest news' in the sidebar, then 'Rebuild today's paper'.")
     st.stop()
 
+# Gemini insights: created once per edition, cached in the session
+insights_key = f"insights_{user_id}_{choice}_{articles[0]['id']}"
+if insights_key not in st.session_state:
+    with st.spinner("Writing today's takeaways..."):
+        st.session_state[insights_key] = make_insights(user_name, articles)
+insights = st.session_state[insights_key]
+
 # PDF export (same edition as the web page)
 st.sidebar.divider()
 if st.sidebar.button("Prepare PDF"):
     with st.spinner("Typesetting your newspaper..."):
-        st.session_state["pdf"] = (choice, build_pdf(user_name, label, articles))
+        st.session_state["pdf"] = (choice, build_pdf(
+            user_name, label, articles,
+            takeaways=insights["takeaways"] if insights else None,
+        ))
 ready = st.session_state.get("pdf")
 if ready and ready[0] == choice:
     st.sidebar.download_button(
         "Download PDF", data=ready[1], file_name=f"morning-paper-{choice}.pdf",
         mime="application/pdf",
     )
+
+# Takeaways box
+if insights:
+    st.markdown("### Today's 3 takeaways")
+    for number, text in enumerate(insights["takeaways"], 1):
+        st.markdown(f"**{number}.** {text}")
+    if insights["note"]:
+        st.caption("Editor's note: " + insights["note"])
+    st.divider()
 
 lead, rest = articles[0], articles[1:]
 wild = [a for a in rest if a.get("wildcard")]
