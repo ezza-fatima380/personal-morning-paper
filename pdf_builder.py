@@ -84,7 +84,7 @@ def picture(images: dict, article: dict, width: float, max_height: float):
 def story(article: dict, images: dict, lead: bool = False) -> list:
     width = FULL_W if lead else COL_W
     parts = []
-    pic = picture(images, article, width, 6 * cm if lead else 4 * cm)
+    pic = picture(images, article, width, 5.5 * cm if lead else 4 * cm)
     if pic:
         parts.append(pic)
         parts.append(Spacer(1, 3))
@@ -98,12 +98,23 @@ def story(article: dict, images: dict, lead: bool = False) -> list:
     return [KeepTogether(parts)]
 
 
+def section(title: str, items: list, images: dict) -> list:
+    """A section heading kept together with its first story (no lonely headings)."""
+    if not items:
+        return []
+    heading = Paragraph(clean(title), S["section"])
+    flow = [KeepTogether([heading] + story(items[0], images))]
+    for article in items[1:]:
+        flow += story(article, images)
+    return flow
+
+
 def boxed(title: str, lines: list, note: str = None) -> Table:
     inner = [Paragraph(clean(title), S["box_title"])]
     inner += [Paragraph(clean(x), S["box"]) for x in lines]
     if note:
         inner.append(Paragraph(clean("Editor's note: " + note), S["box_note"]))
-    table = Table([[inner]], colWidths=[FULL_W])
+    table = Table([[inner]], colWidths=[FULL_W], hAlign="LEFT")
     table.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 1, INK),
         ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F3EDE0")),
@@ -149,7 +160,7 @@ def build_pdf(user_name: str, date_label: str, articles: list,
         canvas.restoreState()
 
     top = PAGE_H - 3.8 * cm
-    lead_h = 15.5 * cm
+    lead_h = 17.5 * cm
     bottom = 1.5 * cm
     first_frames = [
         Frame(MARGIN, top - lead_h, FULL_W, lead_h, id="lead", leftPadding=0, rightPadding=0),
@@ -180,22 +191,15 @@ def build_pdf(user_name: str, date_label: str, articles: list,
                           [f"{i}. {t}" for i, t in enumerate(takeaways, 1)], editor_note))
     flow.append(FrameBreak())
 
-    flow.append(Paragraph("TOP STORIES", S["section"]))
-    for article in regular[:4]:
-        flow += story(article, images)
+    flow += section("TOP STORIES", regular[:4], images)
 
     by_topic = {}
     for article in regular[4:]:
         by_topic.setdefault(article["topic"], []).append(article)
     for topic, items in by_topic.items():
-        flow.append(Paragraph(clean(topic.upper()), S["section"]))
-        for article in items:
-            flow += story(article, images)
+        flow += section(topic.upper(), items, images)
 
-    if wild:
-        flow.append(Paragraph("WILDCARDS: OUTSIDE YOUR USUAL TOPICS", S["section"]))
-        for article in wild:
-            flow += story(article, images)
+    flow += section("WILDCARDS: OUTSIDE YOUR USUAL TOPICS", wild, images)
 
     doc.build(flow)
     return buffer.getvalue()
