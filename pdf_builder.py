@@ -33,6 +33,8 @@ S = {
     "link": ParagraphStyle("l", fontName="Helvetica", fontSize=7.5, spaceAfter=8),
     "section": ParagraphStyle("s", fontName="Helvetica-Bold", fontSize=10, textColor=RED,
                               spaceBefore=6, spaceAfter=4, keepWithNext=1),
+    "section_full": ParagraphStyle("sf", fontName="Helvetica-Bold", fontSize=10, textColor=RED,
+                                   spaceBefore=8, spaceAfter=2),
     "box": ParagraphStyle("bx", fontName="Times-Roman", fontSize=10, leading=13, spaceAfter=3),
     "box_title": ParagraphStyle("bt", fontName="Helvetica-Bold", fontSize=10, textColor=RED, spaceAfter=4),
     "box_note": ParagraphStyle("bn", fontName="Times-Italic", fontSize=9, leading=11, textColor=colors.gray),
@@ -183,14 +185,17 @@ def build_pdf(user_name: str, date_label: str, articles: list,
     lead, rest = articles[0], articles[1:]
     wild = [a for a in rest if a.get("wildcard")]
     regular = [a for a in rest if not a.get("wildcard")]
+    top_stories = regular[:4]
 
-    # Page 1 top block: lead story + takeaways box. The frame is sized to fit it,
-    # so the columns below start right after it (no empty gap).
+    # Page 1 top block: lead story + takeaways box + full-width TOP STORIES heading.
+    # The frame is sized to fit it, so the columns below start right after it.
     top_block = story_parts(lead, images, lead=True)
     if takeaways:
         top_block.append(Spacer(1, 4))
         top_block.append(boxed("TODAY'S 3 TAKEAWAYS",
                                [f"{i}. {t}" for i, t in enumerate(takeaways, 1)], editor_note))
+    if top_stories:
+        top_block.append(Paragraph("TOP STORIES", S["section_full"]))
 
     top = PAGE_H - 3.8 * cm
     bottom = 1.5 * cm
@@ -217,7 +222,8 @@ def build_pdf(user_name: str, date_label: str, articles: list,
     flow += top_block
     flow.append(FrameBreak())
 
-    flow += section("TOP STORIES", regular[:4], images)
+    for article in top_stories:
+        flow += story(article, images)
 
     by_topic = {}
     for article in regular[4:]:
