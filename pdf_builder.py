@@ -6,7 +6,7 @@ from xml.sax.saxutils import escape
 import requests
 from PIL import Image as PILImage
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
+from reportlab.lib.enums import TA_JUSTIFY
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
@@ -31,9 +31,11 @@ S = {
     "meta": ParagraphStyle("m", fontName="Helvetica-Oblique", fontSize=7.5, textColor=colors.gray, spaceAfter=3),
     "body": ParagraphStyle("b", fontName="Times-Roman", fontSize=9.5, leading=11.5, alignment=TA_JUSTIFY, spaceAfter=3),
     "link": ParagraphStyle("l", fontName="Helvetica", fontSize=7.5, spaceAfter=8),
-    "section": ParagraphStyle("s", fontName="Helvetica-Bold", fontSize=10, textColor=RED, spaceBefore=6, spaceAfter=4),
+    "section": ParagraphStyle("s", fontName="Helvetica-Bold", fontSize=10, textColor=RED,
+                              spaceBefore=6, spaceAfter=4, keepWithNext=1),
     "box": ParagraphStyle("bx", fontName="Times-Roman", fontSize=10, leading=13, spaceAfter=3),
     "box_title": ParagraphStyle("bt", fontName="Helvetica-Bold", fontSize=10, textColor=RED, spaceAfter=4),
+    "box_note": ParagraphStyle("bn", fontName="Times-Italic", fontSize=9, leading=11, textColor=colors.gray),
 }
 
 
@@ -46,7 +48,7 @@ def clean(text) -> str:
 
 
 def fetch_image(url: str):
-    """Download one image and return JPEG bytes with its size, or None on any failure."""
+    """Download one image and return (JPEG buffer, size), or None on any failure."""
     if not url:
         return None
     try:
@@ -82,7 +84,7 @@ def picture(images: dict, article: dict, width: float, max_height: float):
 def story(article: dict, images: dict, lead: bool = False) -> list:
     width = FULL_W if lead else COL_W
     parts = []
-    pic = picture(images, article, width, 7 * cm if lead else 4 * cm)
+    pic = picture(images, article, width, 6 * cm if lead else 4 * cm)
     if pic:
         parts.append(pic)
         parts.append(Spacer(1, 3))
@@ -96,8 +98,11 @@ def story(article: dict, images: dict, lead: bool = False) -> list:
     return [KeepTogether(parts)]
 
 
-def boxed(title: str, lines: list) -> Table:
-    inner = [Paragraph(clean(title), S["box_title"])] + [Paragraph(clean(x), S["box"]) for x in lines]
+def boxed(title: str, lines: list, note: str = None) -> Table:
+    inner = [Paragraph(clean(title), S["box_title"])]
+    inner += [Paragraph(clean(x), S["box"]) for x in lines]
+    if note:
+        inner.append(Paragraph(clean("Editor's note: " + note), S["box_note"]))
     table = Table([[inner]], colWidths=[FULL_W])
     table.setStyle(TableStyle([
         ("BOX", (0, 0), (-1, -1), 1, INK),
@@ -112,6 +117,11 @@ def build_pdf(user_name: str, date_label: str, articles: list,
               takeaways: list = None, editor_note: str = None) -> bytes:
     images = load_images(articles)
     buffer = io.BytesIO()
+
+    def footer(canvas, doc):
+        canvas.setFont("Helvetica", 7.5)
+        canvas.setFillColor(colors.gray)
+        canvas.drawCentredString(PAGE_W / 2, 0.9 * cm, f"Page {doc.page}  |  Made fresh for {clean(user_name)}")
 
     def first_page(canvas, doc):
         canvas.saveState()
@@ -128,21 +138,18 @@ def build_pdf(user_name: str, date_label: str, articles: list,
         footer(canvas, doc)
         canvas.restoreState()
 
-    def footer(canvas, doc):
-        canvas.setFont("Helvetica", 7.5)
-        canvas.setFillColor(colors.gray)
-        canvas.drawCentredString(PAGE_W / 2, 0.9 * cm, f"Page {doc.page}  |  Made fresh for {clean(user_name)}")
-
     def later_page(canvas, doc):
         canvas.saveState()
+        canvas.setFillColor(INK)
         canvas.setFont("Times-Italic", 9)
         canvas.drawString(MARGIN, PAGE_H - 1.1 * cm, f"The {clean(user_name)} Morning Paper | {clean(date_label)}")
+        canvas.setLineWidth(0.5)
         canvas.line(MARGIN, PAGE_H - 1.25 * cm, PAGE_W - MARGIN, PAGE_H - 1.25 * cm)
         footer(canvas, doc)
         canvas.restoreState()
 
     top = PAGE_H - 3.8 * cm
-    lead_h = 11.5 * cm
+    lead_h = 15.5 * cm
     bottom = 1.5 * cm
     first_frames = [
         Frame(MARGIN, top - lead_h, FULL_W, lead_h, id="lead", leftPadding=0, rightPadding=0),
@@ -154,7 +161,8 @@ def build_pdf(user_name: str, date_label: str, articles: list,
         Frame(MARGIN, bottom, COL_W, body_top - bottom, id="l1", leftPadding=0, rightPadding=0),
         Frame(MARGIN + COL_W + GAP, bottom, COL_W, body_top - bottom, id="l2", leftPadding=0, rightPadding=0),
     ]
-    doc = BaseDocTemplate(buffer, pagesize=A4, title=f"The {user_name} Morning Paper", author="Personal Morning Paper")
+    doc = BaseDocTemplate(buffer, pagesize=A4, title=f"The {user_name} Morning Paper",
+                          author="Personal Morning Paper")
     doc.addPageTemplates([
         PageTemplate(id="first", frames=first_frames, onPage=first_page),
         PageTemplate(id="later", frames=later_frames, onPage=later_page),
@@ -168,7 +176,8 @@ def build_pdf(user_name: str, date_label: str, articles: list,
     flow += story(lead, images, lead=True)
     if takeaways:
         flow.append(Spacer(1, 4))
-        flow.append(boxed("TODAY'S 3 TAKEAWAYS", [f"{i}. {t}" for i, t in enumerate(takeaways, 1)]))
+        flow.append(boxed("TODAY'S 3 TAKEAWAYS",
+                          [f"{i}. {t}" for i, t in enumerate(takeaways, 1)], editor_note))
     flow.append(FrameBreak())
 
     flow.append(Paragraph("TOP STORIES", S["section"]))
