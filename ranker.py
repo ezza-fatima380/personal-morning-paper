@@ -10,6 +10,9 @@ from reader_profile import (
     tokenize,
 )
 
+DUPLICATE_OVERLAP = 0.55   # share of title words two stories must have in common
+DUPLICATE_MIN_SHARED = 3   # and at least this many words
+
 
 def hours_old(published: str) -> float:
     try:
@@ -32,6 +35,20 @@ def candidate_articles(days: int = 3) -> list:
                 "SELECT * FROM articles ORDER BY published DESC LIMIT 400"
             ).fetchall()
     return [dict(row) for row in rows]
+
+
+def title_words(article: dict) -> set:
+    return set(tokenize(article["title"]))
+
+
+def is_duplicate(words: set, kept: list) -> bool:
+    """True if this title is about the same story as one already picked."""
+    for other in kept:
+        shared = len(words & other)
+        smallest = min(len(words), len(other))
+        if smallest and shared >= DUPLICATE_MIN_SHARED and shared / smallest >= DUPLICATE_OVERLAP:
+            return True
+    return False
 
 
 def score_article(article: dict, topic_weights: dict, keyword_weights: dict):
@@ -91,6 +108,7 @@ def build_edition(user_id: int, size: int = 16, per_source: int = 4,
     scored.sort(key=lambda item: item["score"], reverse=True)
 
     picked, per_source_count, per_topic_count = [], {}, {}
+    kept_titles = []
     for article in scored:
         if len(picked) >= size - wildcards:
             break
@@ -98,7 +116,11 @@ def build_edition(user_id: int, size: int = 16, per_source: int = 4,
             continue
         if per_topic_count.get(article["topic"], 0) >= per_topic:
             continue
+        words = title_words(article)
+        if is_duplicate(words, kept_titles):
+            continue
         picked.append(article)
+        kept_titles.append(words)
         per_source_count[article["source"]] = per_source_count.get(article["source"], 0) + 1
         per_topic_count[article["topic"]] = per_topic_count.get(article["topic"], 0) + 1
 
@@ -108,11 +130,19 @@ def build_edition(user_id: int, size: int = 16, per_source: int = 4,
         if article["id"] not in picked_ids
         and topic_weights.get(article["topic"], DEFAULT_TOPIC_WEIGHT) <= 0.5
     ]
-    for article in pool[:wildcards]:
+    wild_count = 0
+    for article in pool:
+        if wild_count >= wildcards:
+            break
+        words = title_words(article)
+        if is_duplicate(words, kept_titles):
+            continue
         wild = dict(article)
         wild["wildcard"] = True
         wild["reason"] = "Wildcard: outside your usual topics, to help the paper discover new interests."
         picked.append(wild)
+        kept_titles.append(words)
+        wild_count += 1
     return picked
 
 
