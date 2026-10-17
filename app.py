@@ -7,6 +7,7 @@ import streamlit as st
 from config import TOPICS
 from database import init_db
 from fetcher import fetch_all
+from pdf_builder import build_pdf
 from ranker import build_edition, get_edition, list_editions, save_edition
 from reader_profile import (
     get_feedback_ids,
@@ -72,7 +73,7 @@ def render_article(article: dict, user_id: int, prefix: str, interactive: bool,
             pass
     st.markdown(f"## {article['title']}" if lead else f"#### {article['title']}")
     st.caption(f"{article['source']} · {article['topic']}")
-    if article.get("summary"):
+    if article.get("summary") and not article["summary"].startswith("http"):
         st.write(article["summary"])
     st.caption("💡 " + article["reason"])
 
@@ -156,6 +157,18 @@ liked = get_feedback_ids(user_id, "like")
 if not articles:
     st.info("No stories yet. Click 'Fetch latest news' in the sidebar, then 'Rebuild today's paper'.")
     st.stop()
+
+# PDF export (same edition as the web page)
+st.sidebar.divider()
+if st.sidebar.button("Prepare PDF"):
+    with st.spinner("Typesetting your newspaper..."):
+        st.session_state["pdf"] = (choice, build_pdf(user_name, label, articles))
+ready = st.session_state.get("pdf")
+if ready and ready[0] == choice:
+    st.sidebar.download_button(
+        "Download PDF", data=ready[1], file_name=f"morning-paper-{choice}.pdf",
+        mime="application/pdf",
+    )
 
 lead, rest = articles[0], articles[1:]
 wild = [a for a in rest if a.get("wildcard")]
