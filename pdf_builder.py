@@ -81,7 +81,8 @@ def picture(images: dict, article: dict, width: float, max_height: float):
     return Image(buffer, width=width, height=height)
 
 
-def story(article: dict, images: dict, lead: bool = False) -> list:
+def story_parts(article: dict, images: dict, lead: bool = False) -> list:
+    """The flowables of one story (picture, headline, source line, summary, link)."""
     width = FULL_W if lead else COL_W
     parts = []
     pic = picture(images, article, width, 5.5 * cm if lead else 4 * cm)
@@ -95,7 +96,11 @@ def story(article: dict, images: dict, lead: bool = False) -> list:
         parts.append(Paragraph(clean(summary), S["body"]))
     link = escape(article["link"], {'"': "&quot;"})
     parts.append(Paragraph(f'<a href="{link}" color="#1a4f8b">Read the full story online</a>', S["link"]))
-    return [KeepTogether(parts)]
+    return parts
+
+
+def story(article: dict, images: dict, lead: bool = False) -> list:
+    return [KeepTogether(story_parts(article, images, lead))]
 
 
 def section(title: str, items: list, images: dict) -> list:
@@ -107,6 +112,21 @@ def section(title: str, items: list, images: dict) -> list:
     for article in items[1:]:
         flow += story(article, images)
     return flow
+
+
+def order_topics(by_topic: dict, topic_weights: dict = None) -> list:
+    """Topics the reader cares about most come first (stable for equal weights)."""
+    weights = topic_weights or {}
+    return sorted(by_topic, key=lambda topic: -weights.get(topic, 0.0))
+
+
+def measured_height(flowables: list) -> float:
+    """Height these flowables need when drawn at full width."""
+    total = 0.0
+    for item in flowables:
+        _, height = item.wrap(FULL_W, 100 * cm)
+        total += height + item.getSpaceBefore() + item.getSpaceAfter()
+    return total
 
 
 def boxed(title: str, lines: list, note: str = None) -> Table:
@@ -125,7 +145,8 @@ def boxed(title: str, lines: list, note: str = None) -> Table:
 
 
 def build_pdf(user_name: str, date_label: str, articles: list,
-              takeaways: list = None, editor_note: str = None) -> bytes:
+              takeaways: list = None, editor_note: str = None,
+              topic_weights: dict = None) -> bytes:
     images = load_images(articles)
     buffer = io.BytesIO()
 
@@ -159,9 +180,22 @@ def build_pdf(user_name: str, date_label: str, articles: list,
         footer(canvas, doc)
         canvas.restoreState()
 
+    lead, rest = articles[0], articles[1:]
+    wild = [a for a in rest if a.get("wildcard")]
+    regular = [a for a in rest if not a.get("wildcard")]
+
+    # Page 1 top block: lead story + takeaways box. The frame is sized to fit it,
+    # so the columns below start right after it (no empty gap).
+    top_block = story_parts(lead, images, lead=True)
+    if takeaways:
+        top_block.append(Spacer(1, 4))
+        top_block.append(boxed("TODAY'S 3 TAKEAWAYS",
+                               [f"{i}. {t}" for i, t in enumerate(takeaways, 1)], editor_note))
+
     top = PAGE_H - 3.8 * cm
-    lead_h = 17.5 * cm
     bottom = 1.5 * cm
+    safety = 0.8 * cm + 12  # frame padding (12 pt) plus a small safety margin
+    lead_h = min(measured_height(top_block) + safety, top - bottom - 5 * cm)
     first_frames = [
         Frame(MARGIN, top - lead_h, FULL_W, lead_h, id="lead", leftPadding=0, rightPadding=0),
         Frame(MARGIN, bottom, COL_W, top - lead_h - bottom, id="c1", leftPadding=0, rightPadding=0),
@@ -179,16 +213,8 @@ def build_pdf(user_name: str, date_label: str, articles: list,
         PageTemplate(id="later", frames=later_frames, onPage=later_page),
     ])
 
-    lead, rest = articles[0], articles[1:]
-    wild = [a for a in rest if a.get("wildcard")]
-    regular = [a for a in rest if not a.get("wildcard")]
-
     flow = [NextPageTemplate("later")]
-    flow += story(lead, images, lead=True)
-    if takeaways:
-        flow.append(Spacer(1, 4))
-        flow.append(boxed("TODAY'S 3 TAKEAWAYS",
-                          [f"{i}. {t}" for i, t in enumerate(takeaways, 1)], editor_note))
+    flow += top_block
     flow.append(FrameBreak())
 
     flow += section("TOP STORIES", regular[:4], images)
@@ -196,8 +222,8 @@ def build_pdf(user_name: str, date_label: str, articles: list,
     by_topic = {}
     for article in regular[4:]:
         by_topic.setdefault(article["topic"], []).append(article)
-    for topic, items in by_topic.items():
-        flow += section(topic.upper(), items, images)
+    for topic in order_topics(by_topic, topic_weights):
+        flow += section(topic.upper(), by_topic[topic], images)
 
     flow += section("WILDCARDS: OUTSIDE YOUR USUAL TOPICS", wild, images)
 

@@ -318,7 +318,7 @@ if insights_key not in st.session_state:
         st.session_state[insights_key] = make_insights(user_name, articles)
 insights = st.session_state[insights_key]
 
-# PDF export (same edition as the web page)
+# PDF export (same edition and same section order as the web page)
 st.sidebar.divider()
 if st.sidebar.button("Prepare PDF"):
     with st.spinner("Typesetting your newspaper..."):
@@ -326,6 +326,7 @@ if st.sidebar.button("Prepare PDF"):
             user_name, label, articles,
             takeaways=insights["takeaways"] if insights else None,
             editor_note=insights.get("note") if insights else None,
+            topic_weights=weights,
         ))
 ready = st.session_state.get("pdf")
 if ready and ready[0] == choice:
@@ -359,12 +360,14 @@ if regular[:4]:
     section_head("Top stories")
     render_grid(regular[:4], user_id, "top", interactive, liked, per_row=2)
 
+# Topic sections: the reader's favourite topics come first
 by_topic = {}
 for article in regular[4:]:
     by_topic.setdefault(article["topic"], []).append(article)
-for topic, items in by_topic.items():
+topic_order = sorted(by_topic, key=lambda topic: -weights.get(topic, 0.0))
+for topic in topic_order:
     section_head(f"{TOPIC_EMOJI.get(topic, '📰')} {topic}")
-    render_grid(items, user_id, f"sec_{topic}", interactive, liked, per_row=3)
+    render_grid(by_topic[topic], user_id, f"sec_{topic}", interactive, liked, per_row=3)
 
 if wild:
     section_head("🎲 Wildcards: outside your usual topics")
